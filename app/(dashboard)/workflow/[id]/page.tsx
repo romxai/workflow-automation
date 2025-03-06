@@ -11,10 +11,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Workflow } from "@/lib/models/workflow";
 import Link from "next/link";
+import { AgentDebugDialog } from "@/components/workflow/agent-debug-dialog";
 
 export default function WorkflowPage({ params }: { params: { id: string } }) {
   const { data: session, status } = useSession();
@@ -59,6 +60,21 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAgentUpdate = (agentId: string, updatedAgent: any) => {
+    if (!workflow) return;
+
+    // Update the agent in the workflow
+    const updatedAgents = workflow.agents.map((agent) =>
+      agent.id === agentId ? { ...agent, ...updatedAgent } : agent
+    );
+
+    // Update the workflow state
+    setWorkflow({
+      ...workflow,
+      agents: updatedAgents,
+    });
   };
 
   // Show loading state while checking authentication
@@ -117,11 +133,13 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Agents</CardTitle>
-              <CardDescription>
-                AI agents generated for this workflow
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Agents</CardTitle>
+                <CardDescription>
+                  AI agents generated for this workflow
+                </CardDescription>
+              </div>
             </CardHeader>
             <CardContent>
               {workflow.agents && workflow.agents.length > 0 ? (
@@ -129,8 +147,23 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
                   {workflow.agents.map((agent) => (
                     <Card key={agent.id} className="bg-muted/50">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-lg">{agent.name}</CardTitle>
-                        <CardDescription>{agent.description}</CardDescription>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <CardTitle className="text-lg">
+                              {agent.name}
+                            </CardTitle>
+                            <CardDescription>
+                              {agent.description}
+                            </CardDescription>
+                          </div>
+                          <AgentDebugDialog
+                            workflowId={workflow._id as string}
+                            agent={agent}
+                            onAgentUpdate={(updatedAgent) =>
+                              handleAgentUpdate(agent.id, updatedAgent)
+                            }
+                          />
+                        </div>
                       </CardHeader>
                       <CardContent className="space-y-2">
                         <div>

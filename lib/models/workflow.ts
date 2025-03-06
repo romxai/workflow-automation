@@ -10,6 +10,15 @@ export interface Agent {
   outputs: string[];
 }
 
+export interface WorkflowFlow {
+  description: string;
+  connections: Array<{
+    from: string;
+    to: string;
+    description: string;
+  }>;
+}
+
 export interface Workflow {
   _id?: ObjectId | string;
   userId: string;
@@ -17,6 +26,7 @@ export interface Workflow {
   description: string;
   problemStatement: string;
   agents: Agent[];
+  flow: WorkflowFlow;
   createdAt: Date;
   updatedAt: Date;
   lastRun?: Date | null;
