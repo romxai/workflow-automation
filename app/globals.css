@@ -1,0 +1,172 @@
+/* Update the color scheme with more vibrant purple tones */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 270 30% 98%;
+    --foreground: 270 10% 10%;
+
+    --card: 270 30% 96%;
+    --card-foreground: 270 10% 10%;
+
+    --popover: 270 30% 98%;
+    --popover-foreground: 270 10% 10%;
+
+    --primary: 270 70% 55%;
+    --primary-foreground: 270 10% 98%;
+
+    --secondary: 290 70% 90%;
+    --secondary-foreground: 290 50% 20%;
+
+    --muted: 270 20% 92%;
+    --muted-foreground: 270 5% 40%;
+
+    --accent: 310 70% 85%;
+    --accent-foreground: 310 50% 20%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 270 20% 88%;
+    --input: 270 20% 88%;
+    --ring: 270 70% 55%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 270 30% 96%;
+    --sidebar-foreground: 270 10% 10%;
+    --sidebar-primary: 270 70% 55%;
+    --sidebar-primary-foreground: 270 10% 98%;
+    --sidebar-accent: 270 20% 92%;
+    --sidebar-accent-foreground: 270 10% 10%;
+    --sidebar-border: 270 20% 88%;
+    --sidebar-ring: 270 70% 55%;
+  }
+
+  .dark {
+    --background: 270 25% 8%;
+    --foreground: 270 10% 95%;
+
+    --card: 270 25% 12%;
+    --card-foreground: 270 10% 95%;
+
+    --popover: 270 25% 8%;
+    --popover-foreground: 270 10% 95%;
+
+    --primary: 270 70% 65%;
+    --primary-foreground: 270 10% 98%;
+
+    --secondary: 290 50% 30%;
+    --secondary-foreground: 290 10% 95%;
+
+    --muted: 270 25% 16%;
+    --muted-foreground: 270 10% 70%;
+
+    --accent: 310 50% 35%;
+    --accent-foreground: 310 10% 95%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 270 25% 20%;
+    --input: 270 25% 20%;
+    --ring: 270 70% 65%;
+
+    --sidebar-background: 270 25% 12%;
+    --sidebar-foreground: 270 10% 95%;
+    --sidebar-primary: 270 70% 65%;
+    --sidebar-primary-foreground: 270 10% 98%;
+    --sidebar-accent: 270 25% 16%;
+    --sidebar-accent-foreground: 270 10% 95%;
+    --sidebar-border: 270 25% 20%;
+    --sidebar-ring: 270 70% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Add animations and effects */
+@layer components {
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-accent;
+  }
+
+  .hero-gradient {
+    background: radial-gradient(circle at 50% 50%, hsl(var(--primary) / 0.15), transparent 70%),
+      radial-gradient(circle at 0% 0%, hsl(var(--accent) / 0.1), transparent 50%),
+      radial-gradient(circle at 100% 100%, hsl(var(--secondary) / 0.1), transparent 50%);
+  }
+
+  .feature-icon-glow {
+    position: relative;
+  }
+
+  .feature-icon-glow::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+    background: radial-gradient(circle, hsl(var(--primary) / 0.4) 0%, transparent 70%);
+    border-radius: 9999px;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .feature-icon-glow:hover::after {
+    opacity: 1;
+  }
+
+  .floating {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+    100% {
+      transform: translateY(0px);
+    }
+  }
+
+  .pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  .card-hover {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .card-hover:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px -5px hsl(var(--primary) / 0.1), 0 8px 10px -6px hsl(var(--primary) / 0.1);
+  }
+
+  .blur-backdrop {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
