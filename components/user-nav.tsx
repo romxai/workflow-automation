@@ -53,7 +53,10 @@ export function UserNav() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+        <Button
+          variant="ghost"
+          className="border-none hover:bg-transparent relative h-8 rounded-full"
+        >
           <Avatar className="h-8 w-8">
             {session.user?.image && (
               <AvatarImage
@@ -65,6 +68,7 @@ export function UserNav() {
               {getInitials(session.user?.name || "User")}
             </AvatarFallback>
           </Avatar>
+          <p>{session.user?.name}</p>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>

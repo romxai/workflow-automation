@@ -1,4 +1,4 @@
-"use client"
+"use client";
 import {
   Sidebar,
   SidebarContent,
@@ -11,30 +11,55 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { UserNav } from "@/components/user-nav"
-import { Brain, Home, Plus, Search, Settings, HelpCircle, Workflow } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { Label } from "@/components/ui/label"
-
-interface WorkflowItem {
-  id: string
-  name: string
-}
+} from "@/components/ui/sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { UserNav } from "@/components/user-nav";
+import {
+  Brain,
+  Home,
+  Plus,
+  Search,
+  Settings,
+  HelpCircle,
+  Workflow,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Label } from "@/components/ui/label";
+import { useEffect, useState } from "react";
+import { Workflow as WorkflowType } from "@/lib/models/workflow";
+import { useSession } from "next-auth/react";
 
 export function AppSidebar() {
-  const pathname = usePathname()
+  const pathname = usePathname();
+  const { data: session, status } = useSession();
+  const [workflows, setWorkflows] = useState<WorkflowType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock data for workflows
-  const workflows: WorkflowItem[] = [
-    { id: "1", name: "Text Analysis Pipeline" },
-    { id: "2", name: "Customer Support Bot" },
-    { id: "3", name: "Content Generation" },
-    { id: "4", name: "Data Processing Flow" },
-  ]
+  useEffect(() => {
+    // Only fetch workflows if the user is authenticated
+    if (status === "authenticated") {
+      fetchWorkflows();
+    }
+  }, [status]);
+
+  const fetchWorkflows = async () => {
+    try {
+      const response = await fetch("/api/workflows");
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch workflows");
+      }
+
+      const data = await response.json();
+      setWorkflows(data);
+    } catch (error) {
+      console.error("Error fetching workflows for sidebar:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <Sidebar>
@@ -49,7 +74,11 @@ export function AppSidebar() {
               <Label htmlFor="search" className="sr-only">
                 Search
               </Label>
-              <SidebarInput id="search" placeholder="Search workflows..." className="pl-8" />
+              <SidebarInput
+                id="search"
+                placeholder="Search workflows..."
+                className="pl-8"
+              />
               <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 select-none opacity-50" />
             </SidebarGroupContent>
           </SidebarGroup>
@@ -62,7 +91,11 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/"} tooltip="Home">
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/"}
+                  tooltip="Home"
+                >
                   <Link href="/">
                     <Home className="h-4 w-4" />
                     <span>Home</span>
@@ -70,7 +103,11 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/dashboard"} tooltip="Dashboard">
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/dashboard"}
+                  tooltip="Dashboard"
+                >
                   <Link href="/dashboard">
                     <Workflow className="h-4 w-4" />
                     <span>Dashboard</span>
@@ -78,7 +115,11 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/help"} tooltip="Help">
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/help"}
+                  tooltip="Help"
+                >
                   <Link href="/help">
                     <HelpCircle className="h-4 w-4" />
                     <span>Help</span>
@@ -86,7 +127,11 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/user-settings"} tooltip="Settings">
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/user-settings"}
+                  tooltip="Settings"
+                >
                   <Link href="/user-settings">
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
@@ -100,7 +145,12 @@ export function AppSidebar() {
         <SidebarGroup>
           <div className="flex items-center justify-between">
             <SidebarGroupLabel>Workflows</SidebarGroupLabel>
-            <Button variant="ghost" size="icon" className="h-7 w-7 mr-2" asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 mr-2"
+              asChild
+            >
               <Link href="/dashboard">
                 <Plus className="h-4 w-4" />
                 <span className="sr-only">New Workflow</span>
@@ -109,15 +159,29 @@ export function AppSidebar() {
           </div>
           <SidebarGroupContent>
             <SidebarMenu>
-              {workflows.map((workflow) => (
-                <SidebarMenuItem key={workflow.id}>
-                  <SidebarMenuButton asChild isActive={pathname === `/workflow/${workflow.id}`} tooltip={workflow.name}>
-                    <Link href={`/workflow/${workflow.id}`}>
-                      <span>{workflow.name}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {isLoading ? (
+                <div className="px-2 py-1 text-sm text-muted-foreground">
+                  Loading...
+                </div>
+              ) : workflows.length === 0 ? (
+                <div className="px-2 py-1 text-sm text-muted-foreground">
+                  No workflows yet
+                </div>
+              ) : (
+                workflows.map((workflow) => (
+                  <SidebarMenuItem key={workflow._id as string}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === `/workflow/${workflow._id}`}
+                      tooltip={workflow.description || workflow.name}
+                    >
+                      <Link href={`/workflow/${workflow._id}`}>
+                        <span>{workflow.name}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -130,6 +194,5 @@ export function AppSidebar() {
         </div>
       </SidebarFooter>
     </Sidebar>
-  )
+  );
 }
-

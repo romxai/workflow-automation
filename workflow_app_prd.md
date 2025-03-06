@@ -31,6 +31,7 @@ Finally, an orchestration layer connects the agents into a seamless workflow, wi
 
 2. **Analysis Agent Development:**
 
+   - StrategyAgent – Analyzes the user's problem statement and designs the workflow. It identifies the necessary AI agents, defines their roles, and outlines the tasks they need to perform.
    - Integrate an AI model (e.g., Gemini API) to parse the user’s problem.
    - Generate a dynamic blueprint outlining the required AI agents (e.g., Email Classifier, Response Generator).
 
@@ -39,6 +40,8 @@ Finally, an orchestration layer connects the agents into a seamless workflow, wi
    - Structure the blueprint into a clear specification format (e.g., JSON) that details each agent’s role and configuration.
 
 4. **Builder Agent Implementation:**
+
+   - ExecutionAgent – Constructs the AI agents required for the workflow. It generates tailored prompts and specifications, enabling each agent to function as an API wrapper suited to its assigned task.
    - Create templated modules that, based on the specification, instantiate individual agent wrappers.
    - Ensure these wrappers can make API calls to the AI model (Gemini) as needed.
 
@@ -46,6 +49,7 @@ Finally, an orchestration layer connects the agents into a seamless workflow, wi
 
 5. **Orchestration Layer:**
 
+   - OrchestratorAgent – Manages coordination and communication between agents. It ensures that tasks are executed in the correct sequence, directing outputs to the appropriate agents or returning the final result to the user.
    - Develop an orchestration engine that connects the agents into a sequential or parallel workflow.
    - Use asynchronous processing to handle long-running tasks.
 
