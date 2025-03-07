@@ -11,26 +11,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Loader2, ArrowLeft, Bug } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Workflow } from "@/lib/models/workflow";
 import Link from "next/link";
-import { AgentDebugDialog } from "@/components/workflow/agent-debug-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { CardFooter } from "@/components/ui/card";
 
 export default function WorkflowPage({ params }: { params: { id: string } }) {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [agentPrompts, setAgentPrompts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    // Redirect to login if not authenticated
     if (status === "unauthenticated") {
       router.push("/auth/login");
-    }
-
-    // Fetch workflow if authenticated
-    if (status === "authenticated") {
+    } else if (status === "authenticated") {
       fetchWorkflow();
     }
   }, [status, router, params.id]);
@@ -51,9 +49,12 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
 
       const data = await response.json();
       setWorkflow(data);
-
-      // Log the workflow data to the console for debugging
-      console.log("Workflow data:", data);
+      // Initialize agent prompts state
+      const initialPrompts: Record<string, string> = {};
+      data.agents.forEach((agent: any) => {
+        initialPrompts[agent.id] = agent.prompt;
+      });
+      setAgentPrompts(initialPrompts);
     } catch (error) {
       console.error("Error fetching workflow:", error);
       toast.error("Failed to load workflow");
@@ -62,22 +63,35 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
     }
   };
 
-  const handleAgentUpdate = (agentId: string, updatedAgent: any) => {
-    if (!workflow) return;
+  const handleAgentUpdate = async (agentId: string) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/workflows/${params.id}/agents/${agentId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt: agentPrompts[agentId] }),
+      });
 
-    // Update the agent in the workflow
-    const updatedAgents = workflow.agents.map((agent) =>
-      agent.id === agentId ? { ...agent, ...updatedAgent } : agent
-    );
+      if (!response.ok) {
+        throw new Error("Failed to update agent prompt");
+      }
 
-    // Update the workflow state
-    setWorkflow({
-      ...workflow,
-      agents: updatedAgents,
-    });
+      toast.success("Agent prompt updated successfully");
+      fetchWorkflow(); // Refresh workflow data
+    } catch (error) {
+      console.error("Error updating agent prompt:", error);
+      toast.error("Failed to update agent prompt");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Show loading state while checking authentication
+  const handlePromptChange = (agentId: string, value: string) => {
+    setAgentPrompts({ ...agentPrompts, [agentId]: value });
+  };
+
   if (status === "loading" || isLoading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
@@ -156,13 +170,6 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
                               {agent.description}
                             </CardDescription>
                           </div>
-                          <AgentDebugDialog
-                            workflowId={workflow._id as string}
-                            agent={agent}
-                            onAgentUpdate={(updatedAgent) =>
-                              handleAgentUpdate(agent.id, updatedAgent)
-                            }
-                          />
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-2">
@@ -172,9 +179,11 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
                         </div>
                         <div>
                           <h4 className="font-semibold text-sm">Prompt:</h4>
-                          <p className="text-sm whitespace-pre-wrap">
-                            {agent.prompt}
-                          </p>
+                          <Textarea
+                            className="text-sm whitespace-pre-wrap"
+                            value={agentPrompts[agent.id] || agent.prompt}
+                            onChange={(e) => handlePromptChange(agent.id, e.target.value)}
+                          />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
@@ -195,6 +204,11 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
                           </div>
                         </div>
                       </CardContent>
+                      <CardFooter>
+                        <Button size="sm" onClick={() => handleAgentUpdate(agent.id)}>
+                          Save Prompt
+                        </Button>
+                      </CardFooter>
                     </Card>
                   ))}
                 </div>
