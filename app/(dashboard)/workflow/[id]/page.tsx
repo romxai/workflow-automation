@@ -13,10 +13,192 @@ import {
 } from "@/components/ui/card";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { Workflow } from "@/lib/models/workflow";
+import { Workflow, Agent } from "@/lib/models/workflow";
 import Link from "next/link";
 import { Textarea } from "@/components/ui/textarea";
 import { CardFooter } from "@/components/ui/card";
+
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronRight, Play, Send, Settings, X } from "lucide-react";
+
+function WorkflowEditor({ agents, onNodeClick }: { agents: Agent[], onNodeClick: (agent: Agent) => void }) {
+  return (
+    <div className="relative h-full w-full overflow-hidden rounded-md border bg-muted/20 p-4">
+      <div className="absolute left-4 top-4 flex gap-2">
+        <Button size="sm" variant="secondary">
+          <Settings className="mr-2 h-4 w-4" />
+          Settings
+        </Button>
+        <Button size="sm" variant="secondary">
+          <Play className="mr-2 h-4 w-4" />
+          Run Workflow
+        </Button>
+      </div>
+
+      <div className="flex h-full items-center justify-center">
+        <div className="flex flex-wrap gap-8 p-8">
+          {agents.map((agent, index) => (
+            <Card
+              key={agent.id}
+              className="flex h-32 w-48 flex-col p-4 shadow-md cursor-pointer"
+              onClick={() => onNodeClick(agent)}
+            >
+              <div className="mb-2 text-sm font-medium">{agent.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {agent.description}
+              </div>
+              {index < agents.length - 1 && (
+                <ChevronRight className="absolute -right-6 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              )}
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatPanel() {
+  const [messages, setMessages] = useState([
+    {
+      role: "system",
+      content:
+        "I'm the Orchestrator Agent. How can I help you with your workflow?",
+    },
+  ]);
+  const [input, setInput] = useState("");
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+
+    setMessages([
+      ...messages,
+      { role: "user", content: input },
+      {
+        role: "system",
+        content:
+          "I'll help you with that. What specific part of the workflow would you like to modify?",
+      },
+    ]);
+    setInput("");
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b p-4">
+        <h3 className="text-lg font-medium">Orchestrator Chat</h3>
+      </div>
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        {messages.map((message, index) => (
+          <div
+            key={index}
+            className={`flex ${
+              message.role === "user" ? "justify-end" : "justify-start"
+            }`}
+          >
+            <div
+              className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                message.role === "user"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted"
+              }`}
+            >
+              {message.content}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t p-4">
+        <div className="flex gap-2">
+          <Textarea
+            placeholder="Ask the Orchestrator Agent..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="min-h-[60px]"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+          <Button size="icon" onClick={handleSend}>
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NodeDetailsPanel({ agent, onClose, onUpdate }: { agent: Agent | null, onClose: () => void, onUpdate: (updatedAgent: Agent) => void }) {
+  const [prompt, setPrompt] = useState(agent?.prompt || "");
+
+  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPrompt(e.target.value);
+  };
+
+  const handleUpdate = () => {
+    if (agent) {
+      onUpdate({ ...agent, prompt });
+    }
+  };
+
+  if (!agent) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b p-4">
+        <h3 className="text-lg font-medium">{agent.name}</h3>
+        <Button variant="ghost" size="icon" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        <div>
+          <h4 className="font-semibold text-sm">Role:</h4>
+          <p className="text-sm">{agent.role}</p>
+        </div>
+        <div>
+          <h4 className="font-semibold text-sm">Inputs:</h4>
+          <ul className="list-disc list-inside text-sm">
+            {agent.inputs.map((input, index) => (
+              <li key={index}>{input}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h4 className="font-semibold text-sm">Outputs:</h4>
+          <ul className="list-disc list-inside text-sm">
+            {agent.outputs.map((output, index) => (
+              <li key={index}>{output}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h4 className="font-semibold text-sm">Prompt:</h4>
+          <Textarea
+            className="text-sm whitespace-pre-wrap"
+            value={prompt}
+            onChange={handlePromptChange}
+          />
+        </div>
+      </div>
+      <div className="border-t p-4">
+        <Button className="w-full" onClick={handleUpdate}>
+          Save Prompt
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function WorkflowPage({ params }: { params: { id: string } }) {
   const { data: session, status } = useSession();
@@ -24,6 +206,9 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [agentPrompts, setAgentPrompts] = useState<Record<string, string>>({});
+  const [showNodeDetails, setShowNodeDetails] = useState(false);
+  const [showChat, setShowChat] = useState(true);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -121,133 +306,59 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="container py-6">
-      <div className="mb-6 flex items-center">
-        <Button variant="outline" size="sm" asChild className="mr-4">
-          <Link href="/dashboard">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold">{workflow.name}</h1>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="md:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Problem Statement</CardTitle>
-              <CardDescription>
-                The problem this workflow aims to solve
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="whitespace-pre-wrap">{workflow.problemStatement}</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Agents</CardTitle>
-                <CardDescription>
-                  AI agents generated for this workflow
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {workflow.agents && workflow.agents.length > 0 ? (
-                <div className="space-y-4">
-                  {workflow.agents.map((agent) => (
-                    <Card key={agent.id} className="bg-muted/50">
-                      <CardHeader className="pb-2">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <CardTitle className="text-lg">
-                              {agent.name}
-                            </CardTitle>
-                            <CardDescription>
-                              {agent.description}
-                            </CardDescription>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div>
-                          <h4 className="font-semibold text-sm">Role:</h4>
-                          <p className="text-sm">{agent.role}</p>
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-sm">Prompt:</h4>
-                          <Textarea
-                            className="text-sm whitespace-pre-wrap"
-                            value={agentPrompts[agent.id] || agent.prompt}
-                            onChange={(e) => handlePromptChange(agent.id, e.target.value)}
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <h4 className="font-semibold text-sm">Inputs:</h4>
-                            <ul className="list-disc list-inside text-sm">
-                              {agent.inputs.map((input, index) => (
-                                <li key={index}>{input}</li>
-                              ))}
-                            </ul>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-sm">Outputs:</h4>
-                            <ul className="list-disc list-inside text-sm">
-                              {agent.outputs.map((output, index) => (
-                                <li key={index}>{output}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      </CardContent>
-                      <CardFooter>
-                        <Button size="sm" onClick={() => handleAgentUpdate(agent.id)}>
-                          Save Prompt
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">
-                  No agents have been generated yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
+    <div className="container h-[calc(100vh-4rem)] py-6">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Workflow Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <h4 className="font-semibold text-sm">Status:</h4>
-                <p className="capitalize">{workflow.status}</p>
-              </div>
-              <div>
-                <h4 className="font-semibold text-sm">Created:</h4>
-                <p>{new Date(workflow.createdAt).toLocaleString()}</p>
-              </div>
-              {workflow.lastRun && (
-                <div>
-                  <h4 className="font-semibold text-sm">Last Run:</h4>
-                  <p>{new Date(workflow.lastRun).toLocaleString()}</p>
-                </div>
-              )}
-              <div className="pt-4">
-                <Button className="w-full">Run Workflow</Button>
-              </div>
-            </CardContent>
-          </Card>
+          <h1 className="text-3xl font-bold">{workflow.name}</h1>
+          <p className="text-muted-foreground">{workflow.description}</p>
         </div>
+        <Button>
+          <Play className="mr-2 h-4 w-4" /> Run Workflow
+        </Button>
       </div>
+
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="h-[calc(100%-4rem)]"
+      >
+        <ResizablePanel defaultSize={70} minSize={30}>
+          <WorkflowEditor
+            agents={workflow.agents}
+            onNodeClick={(agent) => {
+              setSelectedAgent(agent);
+              setShowNodeDetails(true);
+            }}
+          />
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={30} minSize={20}>
+          <ResizablePanelGroup direction="vertical">
+            {showNodeDetails && (
+              <>
+                <ResizablePanel defaultSize={50}>
+                  <NodeDetailsPanel
+                    agent={selectedAgent}
+                    onClose={() => setShowNodeDetails(false)}
+                    onUpdate={(updatedAgent) => {
+                      handleAgentUpdate(updatedAgent.id);
+                      setSelectedAgent(updatedAgent);
+                    }}
+                  />
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+              </>
+            )}
+
+            {showChat && (
+              <ResizablePanel defaultSize={showNodeDetails ? 50 : 100}>
+                <ChatPanel />
+              </ResizablePanel>
+            )}
+          </ResizablePanelGroup>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }
