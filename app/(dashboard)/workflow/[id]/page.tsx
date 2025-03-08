@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronRight, Play, Send, Settings, X } from "lucide-react";
+import WorkflowVisualizer from "@/components/workflow/WorkflowVisualizer";
 
 function WorkflowEditor({ agents, onNodeClick }: { agents: Agent[], onNodeClick: (agent: Agent) => void }) {
   return (
@@ -41,11 +42,11 @@ function WorkflowEditor({ agents, onNodeClick }: { agents: Agent[], onNodeClick:
       </div>
 
       <div className="flex h-full items-center justify-center">
-        <div className="flex flex-wrap gap-8 p-8">
+        <div className="flex flex-wrap gap-8 p-8 items-center justify-center">
           {agents.map((agent, index) => (
             <Card
               key={agent.id}
-              className="flex h-32 w-48 flex-col p-4 shadow-md cursor-pointer"
+              className="flex h-full w-48 flex-col p-4 shadow-md cursor-pointer"
               onClick={() => onNodeClick(agent)}
             >
               <div className="mb-2 text-sm font-medium">{agent.name}</div>
@@ -154,7 +155,7 @@ function NodeDetailsPanel({ agent, onClose, onUpdate }: { agent: Agent | null, o
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col ">
       <div className="flex items-center justify-between border-b p-4">
         <h3 className="text-lg font-medium">{agent.name}</h3>
         <Button variant="ghost" size="icon" onClick={onClose}>
@@ -218,35 +219,35 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
     }
   }, [status, router, params.id]);
 
-  const fetchWorkflow = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`/api/workflows/${params.id}`);
+const fetchWorkflow = async () => {
+  setIsLoading(true);
+  try {
+    const response = await fetch(`/api/workflows/${params.id}`);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          toast.error("Workflow not found");
-          router.push("/dashboard");
-          return;
-        }
-        throw new Error("Failed to fetch workflow");
+    if (!response.ok) {
+      if (response.status === 404) {
+        toast.error("Workflow not found");
+        router.push("/dashboard");
+        return;
       }
-
-      const data = await response.json();
-      setWorkflow(data);
-      // Initialize agent prompts state
-      const initialPrompts: Record<string, string> = {};
-      data.agents.forEach((agent: any) => {
-        initialPrompts[agent.id] = agent.prompt;
-      });
-      setAgentPrompts(initialPrompts);
-    } catch (error) {
-      console.error("Error fetching workflow:", error);
-      toast.error("Failed to load workflow");
-    } finally {
-      setIsLoading(false);
+      throw new Error("Failed to fetch workflow");
     }
-  };
+
+    const data = await response.json();
+    setWorkflow(data);
+    // Initialize agent prompts state
+    const initialPrompts: Record<string, string> = {};
+    data.agents.forEach((agent: any) => {
+      initialPrompts[agent.id] = agent.prompt;
+    });
+    setAgentPrompts(initialPrompts);
+  } catch (error) {
+    console.error("Error fetching workflow:", error);
+    toast.error("Failed to load workflow");
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleAgentUpdate = async (agentId: string) => {
     setIsLoading(true);
@@ -321,19 +322,14 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
         direction="horizontal"
         className="h-[calc(100%-4rem)]"
       >
-        <ResizablePanel defaultSize={70} minSize={30}>
-          <WorkflowEditor
-            agents={workflow.agents}
-            onNodeClick={(agent) => {
-              setSelectedAgent(agent);
-              setShowNodeDetails(true);
-            }}
-          />
-        </ResizablePanel>
+{workflow && (
+  <ResizablePanel defaultSize={100} minSize={100}>
+    <WorkflowVisualizer workflow={workflow} />
+  </ResizablePanel>
+)}
 
-        <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize={30} minSize={20}>
+<ResizablePanel defaultSize={100} minSize={100}>
           <ResizablePanelGroup direction="vertical">
             {showNodeDetails && (
               <>
@@ -352,7 +348,7 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
             )}
 
             {showChat && (
-              <ResizablePanel defaultSize={showNodeDetails ? 50 : 100}>
+              <ResizablePanel defaultSize={showNodeDetails ? 80 : 100}>
                 <ChatPanel />
               </ResizablePanel>
             )}
