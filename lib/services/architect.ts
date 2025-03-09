@@ -134,7 +134,7 @@ Ensure your response is valid JSON and follows this exact structure. Be thoughtf
       analysis: parsedResponse.analysis,
       flow: parsedResponse.flow || {
         description: "Sequential flow between agents",
-        connections: parsedResponse.agents.slice(0, -1).map((agent, index) => ({
+        connections: parsedResponse.agents.slice(0, -1).map((agent: Agent, index: number) => ({
           from: agent.id,
           to: parsedResponse.agents[index + 1].id,
           description: `Data flows from ${agent.name} to ${
