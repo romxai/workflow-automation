@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
   Brain,
   BrainCog,
   BrainCircuit,
+  Square,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Workflow, Agent } from "@/lib/models/workflow";
@@ -42,32 +43,41 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import WorkflowVisualizer from "@/components/workflow/WorkflowVisualizer";
 import React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ExecutionUpdate } from "@/lib/services/orchestrator";
 
-// Function to get initials from a name
+// Helper function to get initials from a name
 const getInitials = (name: string): string => {
-  const names = name.split(" ");
-  return names.map((n) => n.charAt(0).toUpperCase()).join("");
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .substring(0, 2);
 };
 
 function ChatPanel({
-  isCollapsed,
-  onToggle,
-  isMobile,
+  workflowId,
+  isExecuting,
+  executionUpdates,
+  executionStatus,
+  onInterrupt,
 }: {
-  isCollapsed: boolean;
-  onToggle: () => void;
-  isMobile: boolean;
+  workflowId: string;
+  isExecuting: boolean;
+  executionUpdates: ExecutionUpdate[];
+  executionStatus: "idle" | "executing" | "finished" | "failed";
+  onInterrupt: () => void;
 }) {
   const [messages, setMessages] = useState([
     {
       role: "system",
       content:
-        "I'm the Orchestrator Agent. How can I help you with your workflow?",
+        "I'm the Orchestrator Agent. I'll show you the progress of your workflow execution here. When you run the workflow, you'll see detailed updates about each agent's execution, including inputs, outputs, and reasoning.",
     },
   ]);
-  const [input, setInput] = useState("");
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
-  const { data: session } = useSession();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const processedUpdates = useRef<Set<string>>(new Set());
+
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -75,40 +85,109 @@ function ChatPanel({
     }
   }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  // Add execution updates to messages
+  useEffect(() => {
+    if (executionUpdates.length > 0) {
+      // Process only new updates
+      const newUpdates = executionUpdates.filter((update) => {
+        const timestamp =
+          typeof update.timestamp === "string"
+            ? update.timestamp
+            : update.timestamp instanceof Date
+            ? update.timestamp.toISOString()
+            : String(update.timestamp);
+        const updateKey = `${update.type}-${timestamp}`;
+        if (!processedUpdates.current.has(updateKey)) {
+          processedUpdates.current.add(updateKey);
+          return true;
+        }
+        return false;
+      });
 
-    setMessages([
-      ...messages,
-      { role: "user", content: input },
-      {
-        role: "system",
-        content:
-          "I'll help you with that. What specific part of the workflow would you like to modify?",
-      },
-    ]);
-    setInput("");
-  };
+      if (newUpdates.length > 0) {
+        const messagesToAdd = newUpdates.map((update) => {
+          // Create a message that mirrors the console log format
+          let content = `[${update.type}] ${update.message}`;
 
-  const handleAttachment = () => {
-    // This would be implemented to handle file attachments
-    toast.info("File attachment feature coming soon!");
-  };
+          // Add data details based on update type
+          if (update.type === "start") {
+            // No additional content needed for start updates
+          } else if (update.type === "agent-start" && update.agent) {
+            content += `\nExecuting agent: ${update.agent.name} with inputs:`;
+            if (update.data && update.data.inputs) {
+              content += `\n\`\`\`json\n${JSON.stringify(
+                update.data.inputs,
+                null,
+                2
+              )}\n\`\`\``;
+            }
+          } else if (update.type === "agent-complete" && update.agent) {
+            content += `\nAgent ${update.agent.name} execution completed with result:`;
+            if (
+              update.data &&
+              update.data.outputs &&
+              update.data.outputs.result
+            ) {
+              content += `\n\`\`\`json\n${JSON.stringify(
+                update.data.outputs.result,
+                null,
+                2
+              )}\n\`\`\``;
+            }
+            if (update.data && update.data.reasoning) {
+              content += `\n\nReasoning:\n${update.data.reasoning}`;
+            }
+          } else if (
+            update.type === "complete" &&
+            update.data &&
+            update.data.results
+          ) {
+            content += `\nWorkflow execution completed with results:`;
+            content += `\n\`\`\`json\n${JSON.stringify(
+              update.data.results,
+              null,
+              2
+            )}\n\`\`\``;
+          } else if (update.type === "error") {
+            content += `\nError: ${update.data?.error || "Unknown error"}`;
+          }
 
-  if (isCollapsed) {
-    return (
-      <div className="flex h-full flex-col">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute right-2 top-2 z-10"
-          onClick={onToggle}
-        >
-          <Maximize2 className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  }
+          return { role: "system", content };
+        });
+
+        setMessages((prev) => [...prev, ...messagesToAdd]);
+      }
+    }
+  }, [executionUpdates]);
+
+  // Add a final message when workflow is finished
+  useEffect(() => {
+    if (
+      executionStatus === "finished" &&
+      !processedUpdates.current.has("workflow-finished")
+    ) {
+      processedUpdates.current.add("workflow-finished");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          content: "🎉 Workflow execution finished successfully!",
+        },
+      ]);
+    } else if (
+      executionStatus === "failed" &&
+      !processedUpdates.current.has("workflow-failed")
+    ) {
+      processedUpdates.current.add("workflow-failed");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          content: "❌ Workflow execution failed!",
+        },
+      ]);
+    }
+  }, [executionStatus]);
 
   return (
     <div className="flex h-full flex-col border rounded-lg bg-background">
@@ -116,113 +195,72 @@ function ChatPanel({
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
           <h3 className="text-lg font-medium">Orchestrator Chat</h3>
+          {executionStatus === "executing" && (
+            <span className="text-xs bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full">
+              Executing
+            </span>
+          )}
+          {executionStatus === "finished" && (
+            <span className="text-xs bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full">
+              Finished
+            </span>
+          )}
+          {executionStatus === "failed" && (
+            <span className="text-xs bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full">
+              Failed
+            </span>
+          )}
         </div>
+        {isExecuting && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={onInterrupt}
+            className="flex items-center gap-1"
+          >
+            <Square className="h-3 w-3" />
+            Interrupt
+          </Button>
+        )}
       </div>
-      <div className={`flex-1 overflow-auto p-4 space-y-3`}>
+
+      <div className="flex-1 overflow-auto p-4 space-y-3">
         {messages.map((message, index) => (
           <div
             key={index}
-            className={`flex ${
-              message.role === "user" ? "justify-end" : "justify-start"
-            } animate-in fade-in-0 slide-in-from-bottom-3 duration-300`}
+            className={`flex justify-start animate-in fade-in-0 slide-in-from-bottom-3 duration-300`}
           >
-            {message.role !== "user" && (
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center mr-2 mt-1">
-                <Brain className="h-4 w-4 text-primary" />
-              </div>
-            )}
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center mr-2 mt-1">
+              <Settings className="h-4 w-4 text-primary" />
+            </div>
 
-            <div
-              className={`max-w-[80%] rounded-lg px-4 py-2.5 shadow-sm ${
-                message.role === "user"
-                  ? "bg-primary text-primary-foreground rounded-tr-none"
-                  : "bg-muted rounded-tl-none"
-              }`}
-            >
+            <div className="max-w-[90%] rounded-lg px-4 py-2.5 shadow-sm bg-muted rounded-tl-none">
               <div className="text-sm whitespace-pre-wrap break-words">
-                {message.content}
+                {typeof message.content === "object"
+                  ? JSON.stringify(message.content, null, 2)
+                  : message.content}
               </div>
-              <div
-                className={`text-xs mt-1 opacity-70 text-right ${
-                  message.role === "user"
-                    ? "text-primary-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
+              <div className="text-xs mt-1 opacity-70 text-right text-muted-foreground">
                 {new Date().toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
               </div>
             </div>
-
-            {message.role === "user" && (
-              <div className="h-8 w-8 rounded-full ml-2 mt-1">
-                <Avatar className="h-8 w-8">
-                  {session?.user?.image ? (
-                    <AvatarImage
-                      src={session.user.image}
-                      alt={session.user.name || "User"}
-                    />
-                  ) : (
-                    <AvatarFallback>
-                      {getInitials(session?.user?.name || "User")}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
-              </div>
-            )}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
+
       <div className="border-t p-3">
-        <div className="flex items-center gap-2 bg-muted/30 rounded-lg p-2 border">
-          {/* Attachment Button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 rounded-full hover:bg-primary/10 flex items-center justify-center"
-            onClick={handleAttachment}
-          >
-            <Paperclip className="h-5 w-5 text-muted-foreground" />
-          </Button>
-
-          {/* Text Input */}
-          <Textarea
-            placeholder="Ask the Orchestrator Agent..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="min-h-[40px] max-h-[120px] flex-1 border-0 focus-visible:ring-0 
-                focus-visible:ring-offset-0 resize-none bg-transparent text-sm leading-relaxed"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-
-          {/* Send Button */}
-          <Button
-            size="icon"
-            className={`h-9 w-9 rounded-full flex items-center justify-center 
-                ${
-                  !input.trim()
-                    ? "opacity-50 cursor-not-allowed"
-                    : "bg-primary hover:bg-primary/90"
-                }`}
-            onClick={handleSend}
-            disabled={!input.trim()}
-          >
-            <Send className="h-5 w-5 text-white" />
-          </Button>
-        </div>
-
-        {/* Instruction Text */}
-        <div className="text-xs text-muted-foreground mt-2 text-center">
-          Press <span className="font-medium">Enter</span> to send,{" "}
-          <span className="font-medium">Shift+Enter</span> for new line
+        <div className="text-xs text-muted-foreground text-center">
+          {executionStatus === "idle" &&
+            "Click 'Run Workflow' to start execution"}
+          {executionStatus === "executing" &&
+            "Workflow is currently executing..."}
+          {executionStatus === "finished" &&
+            "Workflow execution completed successfully"}
+          {executionStatus === "failed" && "Workflow execution failed"}
         </div>
       </div>
     </div>
@@ -238,8 +276,15 @@ function NodeDetailsPanel({
   onClose: () => void;
   onUpdate: (updatedAgent: Agent) => void;
 }) {
-  const [prompt, setPrompt] = useState(agent?.prompt || "");
+  const [prompt, setPrompt] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+
+  // Update prompt when agent changes
+  useEffect(() => {
+    if (agent) {
+      setPrompt(agent.prompt || "");
+    }
+  }, [agent]);
 
   const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setPrompt(e.target.value);
@@ -254,12 +299,39 @@ function NodeDetailsPanel({
   };
 
   const handleCancel = () => {
-    setPrompt(agent?.prompt || "");
+    if (agent) {
+      setPrompt(agent.prompt || "");
+    }
     setIsEditing(false);
   };
 
   if (!agent) {
-    return null;
+    return (
+      <div className="flex h-full items-center justify-center border rounded-lg p-4">
+        <div className="text-center">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="mx-auto mb-4 text-muted-foreground"
+          >
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 16v-4"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+          <h3 className="text-lg font-medium mb-2">No Agent Selected</h3>
+          <p className="text-sm text-muted-foreground">
+            Click on a node in the workflow to view agent details
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -375,6 +447,79 @@ function NodeDetailsPanel({
   );
 }
 
+// Input Dialog for workflow execution
+function WorkflowInputDialog({
+  isOpen,
+  onClose,
+  onSubmit,
+  firstAgent,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (inputs: Record<string, string>) => void;
+  firstAgent: Agent | null;
+}) {
+  const [inputs, setInputs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (isOpen && firstAgent) {
+      // Initialize inputs with empty strings for each required input
+      const initialInputs: Record<string, string> = {};
+      firstAgent.inputs.forEach((input) => {
+        initialInputs[input] = "";
+      });
+      setInputs(initialInputs);
+    }
+  }, [isOpen, firstAgent]);
+
+  const handleInputChange = (key: string, value: string) => {
+    setInputs((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const handleSubmit = () => {
+    onSubmit(inputs);
+    onClose();
+  };
+
+  if (!isOpen || !firstAgent) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-auto">
+        <h2 className="text-xl font-bold mb-4">Workflow Inputs</h2>
+        <p className="text-muted-foreground mb-4">
+          Please provide the following inputs for the first agent (
+          {firstAgent.name}):
+        </p>
+
+        <div className="space-y-4">
+          {firstAgent.inputs.map((input) => (
+            <div key={input} className="space-y-2">
+              <label className="text-sm font-medium">{input}</label>
+              <Textarea
+                value={inputs[input] || ""}
+                onChange={(e) => handleInputChange(input, e.target.value)}
+                placeholder={`Enter ${input}...`}
+                className="w-full"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit}>Start Execution</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkflowPage({ params }: { params: { id: string } }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -388,6 +533,21 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
   const [activeTab, setActiveTab] = useState<"flow" | "details" | "chat">(
     "flow"
   );
+
+  // Workflow execution state
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionId, setExecutionId] = useState<string | null>(null);
+  const [executionUpdates, setExecutionUpdates] = useState<ExecutionUpdate[]>(
+    []
+  );
+  const [showInputDialog, setShowInputDialog] = useState(false);
+  const [firstAgent, setFirstAgent] = useState<Agent | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Add execution status state
+  const [executionStatus, setExecutionStatus] = useState<
+    "idle" | "executing" | "finished" | "failed"
+  >("idle");
 
   // Check if screen is mobile
   useEffect(() => {
@@ -411,6 +571,22 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
     }
   }, [status, router, params.id]);
 
+  // Close agent details when chat is collapsed
+  useEffect(() => {
+    if (isChatCollapsed) {
+      setShowNodeDetails(false);
+    }
+  }, [isChatCollapsed]);
+
+  // Clean up polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
   const fetchWorkflow = async () => {
     setIsLoading(true);
     try {
@@ -427,6 +603,25 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
 
       const data = await response.json();
       setWorkflow(data);
+
+      // Find the first agent (with no incoming connections)
+      if (data.agents.length > 0) {
+        const incomingConnections = new Set(
+          data.flow.connections.map((conn: any) => conn.to)
+        );
+
+        const startingAgents = data.agents.filter(
+          (agent: Agent) => !incomingConnections.has(agent.id)
+        );
+
+        if (startingAgents.length > 0) {
+          setFirstAgent(startingAgents[0]);
+        } else {
+          // If no clear starting agent, use the first one
+          setFirstAgent(data.agents[0]);
+        }
+      }
+
       // Initialize agent prompts state
       const initialPrompts: Record<string, string> = {};
       data.agents.forEach((agent: any) => {
@@ -470,11 +665,142 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
   };
 
   const handleNodeClick = (agent: Agent) => {
-    setSelectedAgent(agent);
+    console.log("Node clicked in page component:", agent);
+    // Make a deep copy of the agent to avoid reference issues
+    const agentCopy = JSON.parse(JSON.stringify(agent));
+    setSelectedAgent(agentCopy);
     setShowNodeDetails(true);
     if (isMobile) {
       setActiveTab("details");
     }
+  };
+
+  const handleRunWorkflow = () => {
+    if (firstAgent && firstAgent.inputs.length > 0) {
+      setShowInputDialog(true);
+    } else {
+      startWorkflowExecution({});
+    }
+  };
+
+  const startWorkflowExecution = async (inputs: Record<string, string>) => {
+    try {
+      setIsExecuting(true);
+      setExecutionStatus("executing");
+      setExecutionUpdates([]);
+
+      // Start the workflow execution
+      const response = await fetch(`/api/workflows/${params.id}/execute`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(inputs),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to start workflow execution");
+      }
+
+      const data = await response.json();
+      setExecutionId(data.executionId);
+
+      // Start polling for updates
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+
+      pollingIntervalRef.current = setInterval(() => {
+        fetchExecutionUpdates(data.executionId);
+      }, 1000);
+
+      toast.success("Workflow execution started");
+    } catch (error) {
+      console.error("Error starting workflow execution:", error);
+      toast.error("Failed to start workflow execution");
+      setIsExecuting(false);
+      setExecutionStatus("failed");
+    }
+  };
+
+  // Add a separate useEffect for cleanup
+  useEffect(() => {
+    // Cleanup function to clear interval when component unmounts
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  const fetchExecutionUpdates = async (execId: string) => {
+    try {
+      const response = await fetch(
+        `/api/workflows/${params.id}/execute?executionId=${execId}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch execution updates");
+      }
+
+      const data = await response.json();
+      setExecutionUpdates(data.updates);
+
+      // If execution is complete or has error, stop polling and update status
+      if (data.isComplete) {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+
+        // Check if execution completed successfully or with error
+        const hasError = data.updates.some(
+          (update: ExecutionUpdate) => update.type === "error"
+        );
+        if (hasError) {
+          setIsExecuting(false);
+          setExecutionStatus("failed");
+          toast.error("Workflow execution failed");
+        } else {
+          setIsExecuting(false);
+          setExecutionStatus("finished");
+          toast.success("Workflow execution completed");
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching execution updates:", error);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      setIsExecuting(false);
+      setExecutionStatus("failed");
+      toast.error("Error monitoring workflow execution");
+    }
+  };
+
+  // Add the interrupt handler function
+  const handleInterruptWorkflow = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
+    setIsExecuting(false);
+    setExecutionStatus("failed");
+
+    // Create an interrupt update that will be displayed in the chat
+    const interruptUpdate: ExecutionUpdate = {
+      type: "error",
+      message: "Workflow execution was manually interrupted",
+      timestamp: new Date(),
+    };
+
+    // Add the update to the execution updates
+    setExecutionUpdates((prev) => [...prev, interruptUpdate]);
+
+    toast.info("Workflow execution interrupted");
   };
 
   if (status === "loading" || isLoading) {
@@ -516,8 +842,30 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
               {workflow.description}
             </p>
           </div>
-          <Button size="sm">
-            <Play className="mr-2 h-3 w-3" /> Run
+          <Button
+            size="sm"
+            onClick={handleRunWorkflow}
+            disabled={isExecuting}
+            className={
+              executionStatus === "failed"
+                ? "bg-red-500 hover:bg-red-600"
+                : executionStatus === "finished"
+                ? "bg-green-500 hover:bg-green-600"
+                : undefined
+            }
+          >
+            {isExecuting ? (
+              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+            ) : (
+              <Play className="mr-2 h-3 w-3" />
+            )}
+            {executionStatus === "executing"
+              ? "Running..."
+              : executionStatus === "finished"
+              ? "Finished"
+              : executionStatus === "failed"
+              ? "Failed"
+              : "Run"}
           </Button>
         </div>
 
@@ -564,7 +912,11 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
               </svg>
               Chat
             </TabsTrigger>
-            <TabsTrigger value="details" className="flex items-center gap-1">
+            <TabsTrigger
+              value="details"
+              className="flex items-center gap-1"
+              disabled={!showNodeDetails}
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="14"
@@ -598,9 +950,11 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
 
           <TabsContent value="chat" className="h-[calc(100vh-14rem)]">
             <ChatPanel
-              isCollapsed={false}
-              onToggle={() => {}}
-              isMobile={true}
+              workflowId={params.id}
+              isExecuting={isExecuting}
+              executionUpdates={executionUpdates}
+              executionStatus={executionStatus}
+              onInterrupt={handleInterruptWorkflow}
             />
           </TabsContent>
 
@@ -644,6 +998,14 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Input Dialog */}
+        <WorkflowInputDialog
+          isOpen={showInputDialog}
+          onClose={() => setShowInputDialog(false)}
+          onSubmit={startWorkflowExecution}
+          firstAgent={firstAgent}
+        />
       </div>
     );
   }
@@ -656,8 +1018,29 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
           <h1 className="text-3xl font-bold">{workflow.name}</h1>
           <p className="text-muted-foreground">{workflow.description}</p>
         </div>
-        <Button>
-          <Play className="mr-2 h-4 w-4" /> Run Workflow
+        <Button
+          onClick={handleRunWorkflow}
+          disabled={isExecuting}
+          className={
+            executionStatus === "failed"
+              ? "bg-red-500 hover:bg-red-600"
+              : executionStatus === "finished"
+              ? "bg-green-500 hover:bg-green-600"
+              : undefined
+          }
+        >
+          {isExecuting ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Play className="mr-2 h-4 w-4" />
+          )}
+          {executionStatus === "executing"
+            ? "Running Workflow..."
+            : executionStatus === "finished"
+            ? "Workflow Finished"
+            : executionStatus === "failed"
+            ? "Workflow Failed"
+            : "Run Workflow"}
         </Button>
       </div>
 
@@ -686,13 +1069,23 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
 
           <div className={showNodeDetails ? "flex-1" : "h-full"}>
             <ChatPanel
-              isCollapsed={isChatCollapsed}
-              onToggle={() => setIsChatCollapsed(!isChatCollapsed)}
-              isMobile={isMobile}
+              workflowId={params.id}
+              isExecuting={isExecuting}
+              executionUpdates={executionUpdates}
+              executionStatus={executionStatus}
+              onInterrupt={handleInterruptWorkflow}
             />
           </div>
         </div>
       </div>
+
+      {/* Input Dialog */}
+      <WorkflowInputDialog
+        isOpen={showInputDialog}
+        onClose={() => setShowInputDialog(false)}
+        onSubmit={startWorkflowExecution}
+        firstAgent={firstAgent}
+      />
     </div>
   );
 }

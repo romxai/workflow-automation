@@ -10,11 +10,11 @@ import { MongoClient, ObjectId } from "mongodb";
 
 // Debug helper
 const debug = (message: string, data?: any) => {
-  console.log(`[NextAuth] ${message}`, data ? data : "");
+  //console.log(`[NextAuth] ${message}`, data ? data : "");
 };
 
 export const authOptions: NextAuthOptions = {
-  debug: true, // Enable NextAuth.js debug mode
+  //debug: true, // Enable NextAuth.js debug mode
   adapter: MongoDBAdapter(clientPromise),
   providers: [
     GithubProvider({

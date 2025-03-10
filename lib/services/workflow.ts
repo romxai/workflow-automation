@@ -209,8 +209,14 @@ export async function executeWorkflow(
 ): Promise<{
   results: Record<string, any>;
   agentOutputs: Record<string, any>;
+  updates: any[];
 }> {
   try {
+    console.log(
+      `Starting execution of workflow ${workflowId} with inputs:`,
+      inputData
+    );
+
     const workflow = await getWorkflowById(workflowId, userId);
 
     if (!workflow) {
@@ -224,9 +230,32 @@ export async function executeWorkflow(
     await orchestrator.initialize();
 
     // Execute the workflow
-    const { results, agentOutputs } = await orchestrator.execute(inputData);
+    console.log(
+      `Executing workflow ${workflow.name} with ${workflow.agents.length} agents`
+    );
+    const { results, agentOutputs, updates } = await orchestrator.execute(
+      inputData
+    );
 
-    return { results, agentOutputs };
+    // Update the workflow with the last run timestamp
+    const workflowToUpdate = await getWorkflowById(workflowId, userId);
+    if (workflowToUpdate) {
+      workflowToUpdate.lastRun = new Date();
+      await updateWorkflow(
+        workflowId,
+        {
+          name: workflowToUpdate.name,
+          description: workflowToUpdate.description,
+          problemStatement: workflowToUpdate.problemStatement,
+          agents: workflowToUpdate.agents,
+          flow: workflowToUpdate.flow,
+        },
+        userId
+      );
+    }
+
+    console.log(`Workflow execution completed with results:`, results);
+    return { results, agentOutputs, updates };
   } catch (error) {
     console.error("Error executing workflow:", error);
     throw error;

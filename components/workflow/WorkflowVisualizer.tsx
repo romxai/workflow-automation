@@ -107,7 +107,12 @@ const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({
             prompt: agent.prompt,
             role: agent.role,
             description: agent.description,
-            onClick: () => onNodeClick && onNodeClick(agent),
+            onClick: () => {
+              console.log("Node clicked in WorkflowVisualizer:", agent.name);
+              if (onNodeClick) {
+                onNodeClick(agent);
+              }
+            },
           },
           position: { x: 0, y: 0 }, // Initial positions will be calculated by dagre
         }));

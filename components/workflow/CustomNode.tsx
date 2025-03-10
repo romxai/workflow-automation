@@ -13,9 +13,17 @@ const CustomNode: React.FC<NodeProps<CustomNodeData>> = ({
   data,
   selected,
 }) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (data.onClick) {
+      console.log("CustomNode clicked:", data.name);
+      data.onClick();
+    }
+  };
+
   return (
     <div
-      onClick={data.onClick}
+      onClick={handleClick}
       className={`
         bg-card text-card-foreground 
         p-4 rounded-lg shadow-md 

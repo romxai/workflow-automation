@@ -4,12 +4,12 @@ import { getToken } from "next-auth/jwt";
 
 // Debug helper
 const debug = (message: string, data?: any) => {
-  console.log(`[Middleware] ${message}`, data ? data : "");
+  //console.log(`[Middleware] ${message}`, data ? data : "");
 };
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  debug("Middleware processing request", { pathname });
+  //debug("Middleware processing request", { pathname });
 
   // Check if the path is a protected route
   const isProtectedRoute =
@@ -21,7 +21,7 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute =
     pathname.startsWith("/auth/login") || pathname.startsWith("/auth/signup");
 
-  debug("Route classification", { isProtectedRoute, isAuthRoute });
+  //debug("Route classification", { isProtectedRoute, isAuthRoute });
 
   try {
     // Get the token
@@ -30,13 +30,13 @@ export async function middleware(request: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET,
     });
 
-    debug("Auth token status", { hasToken: !!token });
+    //debug("Auth token status", { hasToken: !!token });
 
     // Redirect to login if accessing a protected route without being authenticated
     if (isProtectedRoute && !token) {
-      debug("Unauthorized access to protected route, redirecting to login", {
-        pathname,
-      });
+      //debug("Unauthorized access to protected route, redirecting to login", {
+      //  pathname,
+      //});
       const url = new URL("/auth/login", request.url);
       url.searchParams.set("callbackUrl", encodeURI(pathname));
       return NextResponse.redirect(url);
@@ -44,13 +44,13 @@ export async function middleware(request: NextRequest) {
 
     // Redirect to dashboard if accessing auth routes while authenticated
     if (isAuthRoute && token) {
-      debug(
-        "Authenticated user accessing auth route, redirecting to dashboard"
-      );
+      //debug(
+      //  "Authenticated user accessing auth route, redirecting to dashboard"
+      //);
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
 
-    debug("Middleware allowing request to proceed");
+    //debug("Middleware allowing request to proceed");
     return NextResponse.next();
   } catch (error) {
     console.error("Middleware error:", error);
