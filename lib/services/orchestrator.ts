@@ -66,12 +66,26 @@ export class Orchestrator {
     updates: ExecutionUpdate[];
   }> {
     try {
+      console.log("\n[DEBUG] Starting workflow execution");
+      console.log(`[DEBUG] Workflow name: ${this.workflow.name}`);
+      console.log(`[DEBUG] Initial input data:`, inputData);
+
+      // Normalize input data by removing type annotations from keys
+      const normalizedInputData: Record<string, any> = {};
+      Object.entries(inputData).forEach(([key, value]) => {
+        const normalizedKey = key.split(":")[0].trim();
+        normalizedInputData[normalizedKey] = value;
+        // Also keep the original key for backward compatibility
+        normalizedInputData[key] = value;
+      });
+
       this.executionUpdates = []; // Reset updates
       this.addUpdate(
         "start",
         `Starting workflow execution: ${this.workflow.name}`
       );
 
+      // Initialize data structures
       const agentOutputs: Record<string, any> = {};
       const results: Record<string, any> = {};
       const agentMap: Record<string, Agent> = {};
@@ -88,6 +102,12 @@ export class Orchestrator {
         this.workflow.agents
       );
 
+      console.log(
+        `[DEBUG] Determined execution order: ${executionOrder
+          .map((id) => agentMap[id].name)
+          .join(" → ")}`
+      );
+
       this.addUpdate(
         "start",
         `Determined execution order: ${executionOrder
@@ -95,46 +115,74 @@ export class Orchestrator {
           .join(" → ")}`
       );
 
-      // Track current inputs for each agent
-      let currentInputs = { ...inputData };
+      // Track global inputs that are available to all agents
+      const globalInputs = { ...normalizedInputData };
 
       // Execute agents in the determined order
       for (const agentId of executionOrder) {
         // Skip if agent was already executed
         if (executedAgents.has(agentId)) {
           const skipMessage = `Skipping already executed agent: ${agentMap[agentId].name}`;
-          console.log(skipMessage);
+          console.log(`[DEBUG] ${skipMessage}`);
           this.addUpdate("start", skipMessage);
           continue;
         }
 
         const agent = agentMap[agentId];
-        executedAgents.add(agentId); // Mark as executed
+        console.log(`\n[DEBUG] Executing agent: ${agent.name} (${agent.id})`);
 
-        this.addUpdate("agent-start", `Starting agent: ${agent.name}`, agent, {
-          inputs: currentInputs,
-        });
+        executedAgents.add(agentId); // Mark as executed
 
         // Prepare inputs for this agent
         const agentInputs = this.prepareAgentInputs(
           agent,
-          currentInputs,
+          globalInputs,
           agentOutputs
         );
 
+        // Add update for agent start
+        this.addUpdate("agent-start", `Starting agent: ${agent.name}`, agent, {
+          inputs: agentInputs,
+        });
+
         // Execute the agent
+        console.log(`[DEBUG] Calling executeAgent for ${agent.name}`);
         const output = await executeAgent(agent, agentInputs);
+        console.log(`[DEBUG] Agent ${agent.name} execution completed`);
+
+        // Validate output structure
+        if (!output.result) {
+          console.error(
+            `[DEBUG] Error: Agent ${agent.name} output is missing 'result' field`
+          );
+          output.result = {};
+        }
 
         // Store the output
         agentOutputs[agent.id] = output;
 
-        // Update results
+        // Update results with this agent's output
         if (output.result) {
-          Object.assign(results, output.result);
-          // Update current inputs for next agent
-          currentInputs = { ...currentInputs, ...output.result };
+          // Add each output to the global results and inputs
+          Object.entries(output.result).forEach(([key, value]) => {
+            // Normalize the output key
+            const normalizedKey = key.split(":")[0].trim();
+
+            // Store with both the original and normalized keys
+            results[key] = value;
+            results[normalizedKey] = value;
+
+            // Also add to global inputs with both keys
+            globalInputs[key] = value;
+            globalInputs[normalizedKey] = value;
+
+            console.log(
+              `[DEBUG] Adding output '${key}' from ${agent.name} to global results and inputs`
+            );
+          });
         }
 
+        // Add update for agent completion
         this.addUpdate(
           "agent-complete",
           `Completed agent: ${agent.name}`,
@@ -146,6 +194,9 @@ export class Orchestrator {
           }
         );
       }
+
+      console.log(`\n[DEBUG] Workflow execution completed`);
+      console.log(`[DEBUG] Final results:`, results);
 
       this.addUpdate(
         "complete",
@@ -162,8 +213,8 @@ export class Orchestrator {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      console.error(`[DEBUG] Workflow execution failed: ${errorMessage}`);
       this.addUpdate("error", `Workflow execution failed: ${errorMessage}`);
-      console.error("Workflow execution failed:", error);
       throw error;
     }
   }
@@ -239,22 +290,172 @@ export class Orchestrator {
     globalInputs: Record<string, any>,
     agentOutputs: Record<string, any>
   ): Record<string, any> {
-    // Start with global inputs
-    const inputs = { ...globalInputs };
+    console.log(
+      `\n[DEBUG] Preparing inputs for agent: ${agent.name} (${agent.id})`
+    );
+    console.log(
+      `[DEBUG] Agent ${agent.name} expects inputs: ${agent.inputs.join(", ")}`
+    );
 
-    // Find connections where this agent is the target
+    // Initialize inputs object
+    const inputs: Record<string, any> = {};
+
+    // Step 1: Find all incoming connections to this agent
     const incomingConnections = this.workflow.flow.connections.filter(
       (conn) => conn.to === agent.id
     );
 
-    // Add outputs from source agents
-    incomingConnections.forEach((conn) => {
-      const sourceOutput = agentOutputs[conn.from];
-      if (sourceOutput && sourceOutput.result) {
-        Object.assign(inputs, sourceOutput.result);
-      }
+    console.log(
+      `[DEBUG] Found ${incomingConnections.length} incoming connections for ${agent.name}`
+    );
+
+    // Helper function to normalize input/output names by removing type annotations
+    const normalizeKey = (key: string): string => key.split(":")[0].trim();
+
+    // Create a map of normalized input names to original input names
+    const normalizedInputMap = new Map<string, string>();
+    agent.inputs.forEach((input) => {
+      normalizedInputMap.set(normalizeKey(input), input);
     });
 
+    // Step 2: For each expected input, try to find a value from connected agents or global inputs
+    for (const inputName of agent.inputs) {
+      // Get the normalized input name (without type annotation)
+      const normalizedInputName = normalizeKey(inputName);
+
+      // First check if this input is provided by a connected agent
+      let inputFound = false;
+
+      // Look through all incoming connections
+      for (const connection of incomingConnections) {
+        const sourceAgentId = connection.from;
+        const sourceAgent = this.workflow.agents.find(
+          (a) => a.id === sourceAgentId
+        );
+
+        if (!sourceAgent) {
+          console.warn(
+            `[DEBUG] Warning: Source agent with ID ${sourceAgentId} not found`
+          );
+          continue;
+        }
+
+        // Create a map of normalized output names to original output names
+        const normalizedOutputMap = new Map<string, string>();
+        sourceAgent.outputs.forEach((output) => {
+          normalizedOutputMap.set(normalizeKey(output), output);
+        });
+
+        // Check if the source agent has an output matching this input name (normalized or not)
+        const matchingOutput = sourceAgent.outputs.find(
+          (output) =>
+            normalizeKey(output) === normalizedInputName || output === inputName
+        );
+
+        if (matchingOutput) {
+          // Check if we have outputs from this source agent
+          const sourceOutput = agentOutputs[sourceAgentId];
+          if (sourceOutput && sourceOutput.result) {
+            // Try to find the output value using different key formats
+            let outputValue;
+
+            // First try the exact output name
+            if (sourceOutput.result[matchingOutput] !== undefined) {
+              outputValue = sourceOutput.result[matchingOutput];
+            }
+            // Then try the normalized output name
+            else if (
+              sourceOutput.result[normalizeKey(matchingOutput)] !== undefined
+            ) {
+              outputValue = sourceOutput.result[normalizeKey(matchingOutput)];
+            }
+            // Finally, try all keys with normalized comparison
+            else {
+              const outputKey = Object.keys(sourceOutput.result).find(
+                (key) => normalizeKey(key) === normalizeKey(matchingOutput)
+              );
+              if (outputKey) {
+                outputValue = sourceOutput.result[outputKey];
+              }
+            }
+
+            if (outputValue !== undefined) {
+              inputs[inputName] = outputValue;
+              console.log(
+                `[DEBUG] Input '${inputName}' for ${agent.name} found from agent ${sourceAgent.name}`
+              );
+              console.log(
+                `[DEBUG] Value: ${
+                  typeof outputValue === "object"
+                    ? JSON.stringify(outputValue)
+                    : outputValue
+                }`
+              );
+              inputFound = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // If not found from connected agents, check global inputs
+      if (!inputFound) {
+        // Try different key formats in global inputs
+        let globalValue;
+
+        // First try the exact input name
+        if (globalInputs[inputName] !== undefined) {
+          globalValue = globalInputs[inputName];
+        }
+        // Then try the normalized input name
+        else if (globalInputs[normalizedInputName] !== undefined) {
+          globalValue = globalInputs[normalizedInputName];
+        }
+        // Finally, try all keys with normalized comparison
+        else {
+          const globalKey = Object.keys(globalInputs).find(
+            (key) => normalizeKey(key) === normalizedInputName
+          );
+          if (globalKey) {
+            globalValue = globalInputs[globalKey];
+          }
+        }
+
+        if (globalValue !== undefined) {
+          inputs[inputName] = globalValue;
+          console.log(
+            `[DEBUG] Input '${inputName}' for ${agent.name} found from global inputs`
+          );
+          console.log(
+            `[DEBUG] Value: ${
+              typeof globalValue === "object"
+                ? JSON.stringify(globalValue)
+                : globalValue
+            }`
+          );
+          inputFound = true;
+        }
+      }
+
+      // If still not found, log a warning
+      if (!inputFound) {
+        console.warn(
+          `[DEBUG] Warning: Input '${inputName}' for agent ${agent.name} not found from any source`
+        );
+      }
+    }
+
+    // Step 3: Check if all required inputs are present
+    const missingInputs = agent.inputs.filter((input) => !(input in inputs));
+    if (missingInputs.length > 0) {
+      console.warn(
+        `[DEBUG] Warning: Agent ${
+          agent.name
+        } is missing required inputs: ${missingInputs.join(", ")}`
+      );
+    }
+
+    console.log(`[DEBUG] Final inputs for ${agent.name}:`, inputs);
     return inputs;
   }
 }

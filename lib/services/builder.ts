@@ -11,31 +11,103 @@ export async function executeAgent(
   inputs: Record<string, any>
 ): Promise<Record<string, any>> {
   try {
-    console.log(`Executing agent: ${agent.name} with inputs:`, inputs);
+    console.log(`\n[DEBUG] executeAgent: Starting execution of ${agent.name}`);
+    console.log(`[DEBUG] executeAgent: Agent inputs:`, inputs);
+    console.log(
+      `[DEBUG] executeAgent: Agent expected inputs: ${agent.inputs.join(", ")}`
+    );
+    console.log(
+      `[DEBUG] executeAgent: Agent expected outputs: ${agent.outputs.join(
+        ", "
+      )}`
+    );
 
     // Validate inputs against agent's expected inputs
     const missingInputs = agent.inputs.filter((input) => !(input in inputs));
     if (missingInputs.length > 0) {
       console.warn(
-        `Warning: Missing inputs for agent ${agent.name}: ${missingInputs.join(
-          ", "
-        )}`
+        `[DEBUG] executeAgent: Warning - Missing inputs for agent ${
+          agent.name
+        }: ${missingInputs.join(", ")}`
       );
     }
 
     // Construct the prompt for Gemini with the agent's prompt and inputs
     let agentPrompt = agent.prompt;
+    console.log(
+      `[DEBUG] executeAgent: Original prompt: ${agentPrompt.substring(
+        0,
+        100
+      )}...`
+    );
 
     // Replace input placeholders in the prompt if they exist
     Object.entries(inputs).forEach(([key, value]) => {
-      const placeholder = `{{${key}}}`;
-      if (agentPrompt.includes(placeholder)) {
-        agentPrompt = agentPrompt.replace(
-          new RegExp(placeholder, "g"),
-          typeof value === "object"
-            ? JSON.stringify(value, null, 2)
-            : String(value)
-        );
+      // Handle different placeholder formats
+      const placeholders = [
+        `{{${key}}}`, // Format: {{key}}
+        `{${key}}`, // Format: {key}
+        `{{${key.split(":")[0]}}}`, // Format: {{key}} when input has type annotation
+        `{${key.split(":")[0]}}`, // Format: {key} when input has type annotation
+      ];
+
+      let replacementMade = false;
+
+      placeholders.forEach((placeholder) => {
+        if (agentPrompt.includes(placeholder)) {
+          const valueStr =
+            typeof value === "object"
+              ? JSON.stringify(value, null, 2)
+              : String(value);
+
+          console.log(
+            `[DEBUG] executeAgent: Replacing placeholder ${placeholder} with value: ${valueStr.substring(
+              0,
+              50
+            )}${valueStr.length > 50 ? "..." : ""}`
+          );
+
+          agentPrompt = agentPrompt.replace(
+            new RegExp(placeholder, "g"),
+            valueStr
+          );
+
+          replacementMade = true;
+        }
+      });
+
+      if (!replacementMade) {
+        // Try to find if there's any placeholder that might match this input
+        const possiblePlaceholders = [
+          new RegExp(`\\{\\{${key.split(":")[0]}(?:\\s*|[^}]*?)\\}\\}`, "g"), // {{key}} or {{key with something}}
+          new RegExp(`\\{${key.split(":")[0]}(?:\\s*|[^}]*?)\\}`, "g"), // {key} or {key with something}
+        ];
+
+        let foundPlaceholder = false;
+        possiblePlaceholders.forEach((regex) => {
+          const matches = agentPrompt.match(regex);
+          if (matches) {
+            foundPlaceholder = true;
+            matches.forEach((match) => {
+              console.log(
+                `[DEBUG] executeAgent: Found potential placeholder match: ${match} for input ${key}`
+              );
+              const valueStr =
+                typeof value === "object"
+                  ? JSON.stringify(value, null, 2)
+                  : String(value);
+
+              agentPrompt = agentPrompt.replace(match, valueStr);
+              console.log(`[DEBUG] executeAgent: Replaced ${match} with value`);
+            });
+          }
+        });
+
+        if (!foundPlaceholder) {
+          console.log(
+            `[DEBUG] executeAgent: No placeholder found for input ${key}`
+          );
+        }
       }
     });
 
@@ -52,7 +124,12 @@ IMPORTANT: Your response must be in valid JSON format with the following structu
 }
 
 Make sure to include all the required output fields: ${agent.outputs.join(", ")}
+Do not include any fields in the result that are not in this list: ${agent.outputs.join(
+      ", "
+    )}
 `;
+
+    console.log(`[DEBUG] executeAgent: Final prompt prepared, sending to API`);
 
     // Make the API call to Gemini
     const response = await fetch(
@@ -85,84 +162,111 @@ Make sure to include all the required output fields: ${agent.outputs.join(", ")}
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error("Gemini API error:", errorData);
+      console.error("[DEBUG] executeAgent: Gemini API error:", errorData);
       throw new Error(
         `Gemini API error: ${response.status} ${response.statusText}`
       );
     }
 
     const data = await response.json();
+    console.log(`[DEBUG] executeAgent: Received response from API`);
 
     // Extract the text from the response
     const text = data.candidates[0].content.parts[0].text;
+    console.log(
+      `[DEBUG] executeAgent: Raw response text: ${text.substring(0, 200)}...`
+    );
 
     // Parse the JSON from the text
     // Find the JSON object in the text (it might be surrounded by markdown code blocks)
     const jsonMatch =
-      text.match(/```json\n([\s\S]*?)\n```/) ||
-      text.match(/```\n([\s\S]*?)\n```/) ||
-      text.match(/{[\s\S]*?}/);
+      text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) ||
+      text.match(/(\{[\s\S]*\})/);
 
-    let jsonText = "";
-    if (jsonMatch) {
-      jsonText = jsonMatch[0].replace(/```json\n|```\n|```/g, "");
-    } else {
-      jsonText = text;
+    if (!jsonMatch) {
+      console.error(
+        "[DEBUG] executeAgent: Could not extract JSON from response"
+      );
+      throw new Error("Could not extract JSON from response");
     }
 
-    // Parse the JSON
-    let result: {
-      result: Record<string, string>;
-      reasoning: string;
-    } = {
-      result: {},
-      reasoning: "",
-    };
-
-    try {
-      const parsed = JSON.parse(jsonText);
-      result = {
-        result: parsed.result || {},
-        reasoning: parsed.reasoning || "No reasoning provided",
-      };
-    } catch (parseError) {
-      console.error("Error parsing agent response:", parseError);
-      console.log("Raw response:", text);
-
-      // Set error result
-      result = {
-        result: {},
-        reasoning: "Error parsing response: " + String(parseError),
-      };
-
-      // Add placeholder values for expected outputs
-      agent.outputs.forEach((output) => {
-        result.result[output] = "Error: Failed to generate output";
-      });
-    }
-
-    // Validate that all expected outputs are present
-    const missingOutputs = agent.outputs.filter(
-      (output) => !(output in (result.result || {}))
+    const jsonStr = jsonMatch[1];
+    console.log(
+      `[DEBUG] executeAgent: Extracted JSON string: ${jsonStr.substring(
+        0,
+        200
+      )}...`
     );
+
+    let parsedOutput;
+    try {
+      parsedOutput = JSON.parse(jsonStr);
+      console.log(`[DEBUG] executeAgent: Successfully parsed JSON`);
+    } catch (parseError) {
+      console.error(`[DEBUG] executeAgent: Error parsing JSON: ${parseError}`);
+      throw new Error(`Failed to parse JSON response: ${parseError}`);
+    }
+
+    // Validate that the output contains all required fields
+    if (!parsedOutput.result) {
+      console.error("[DEBUG] executeAgent: Output is missing 'result' field");
+      parsedOutput.result = {};
+    }
+
+    // Ensure all expected outputs are present
+    const missingOutputs = agent.outputs.filter(
+      (output) => !(output in parsedOutput.result)
+    );
+
     if (missingOutputs.length > 0) {
       console.warn(
-        `Warning: Missing outputs from agent ${
+        `[DEBUG] executeAgent: Warning - Agent ${
           agent.name
-        }: ${missingOutputs.join(", ")}`
+        } output is missing fields: ${missingOutputs.join(", ")}`
       );
 
-      // Add placeholder values for missing outputs
+      // Add missing outputs with placeholder values
       missingOutputs.forEach((output) => {
-        if (!result.result) result.result = {};
-        result.result[output] = "Not provided by agent";
+        parsedOutput.result[output] = `Missing output: ${output}`;
       });
     }
 
-    console.log(`Agent ${agent.name} execution completed with result:`, result);
-    return result;
+    // Remove any extra fields that are not in the expected outputs
+    const extraOutputs = Object.keys(parsedOutput.result).filter(
+      (key) => !agent.outputs.includes(key)
+    );
+
+    if (extraOutputs.length > 0) {
+      console.warn(
+        `[DEBUG] executeAgent: Warning - Agent ${
+          agent.name
+        } output contains unexpected fields: ${extraOutputs.join(", ")}`
+      );
+
+      extraOutputs.forEach((key) => {
+        console.warn(
+          `[DEBUG] executeAgent: Removing unexpected output field: ${key}`
+        );
+        delete parsedOutput.result[key];
+      });
+    }
+
+    // Ensure reasoning is present
+    if (!parsedOutput.reasoning) {
+      console.warn("[DEBUG] executeAgent: Output is missing 'reasoning' field");
+      parsedOutput.reasoning = "No reasoning provided";
+    }
+
+    console.log(
+      `[DEBUG] executeAgent: Final validated output for ${agent.name}:`,
+      parsedOutput
+    );
+    return parsedOutput;
   } catch (error) {
-    console.error("Error executing agent:", error);
+    console.error(
+      `[DEBUG] executeAgent: Error executing agent ${agent.name}:`,
+      error
+    );
 
     // Create a fallback result with error information
     const fallbackResult: {
@@ -178,6 +282,10 @@ Make sure to include all the required output fields: ${agent.outputs.join(", ")}
       fallbackResult.result[output] = "Error: Agent execution failed";
     });
 
+    console.log(
+      `[DEBUG] executeAgent: Returning fallback result for ${agent.name}:`,
+      fallbackResult
+    );
     return fallbackResult;
   }
 }

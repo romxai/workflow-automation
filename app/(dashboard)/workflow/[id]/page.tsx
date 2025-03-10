@@ -5,26 +5,12 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Loader2,
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Play,
   Send,
   Settings,
   X,
-  Maximize2,
-  Minimize2,
-  Paperclip,
-  Layers,
-  Zap,
   MessageSquare,
   Pencil,
   FileInput,
@@ -88,6 +74,11 @@ function ChatPanel({
   // Add execution updates to messages
   useEffect(() => {
     if (executionUpdates.length > 0) {
+      console.log(
+        "[DEBUG] ChatPanel: Processing execution updates:",
+        executionUpdates.length
+      );
+
       // Process only new updates
       const newUpdates = executionUpdates.filter((update) => {
         const timestamp =
@@ -97,6 +88,7 @@ function ChatPanel({
             ? update.timestamp.toISOString()
             : String(update.timestamp);
         const updateKey = `${update.type}-${timestamp}`;
+
         if (!processedUpdates.current.has(updateKey)) {
           processedUpdates.current.add(updateKey);
           return true;
@@ -105,6 +97,10 @@ function ChatPanel({
       });
 
       if (newUpdates.length > 0) {
+        console.log(
+          `[DEBUG] ChatPanel: Found ${newUpdates.length} new updates to display`
+        );
+
         const messagesToAdd = newUpdates.map((update) => {
           // Create a message that mirrors the console log format
           let content = `[${update.type}] ${update.message}`;
@@ -115,6 +111,10 @@ function ChatPanel({
           } else if (update.type === "agent-start" && update.agent) {
             content += `\nExecuting agent: ${update.agent.name} with inputs:`;
             if (update.data && update.data.inputs) {
+              console.log(
+                `[DEBUG] ChatPanel: Agent start inputs:`,
+                update.data.inputs
+              );
               content += `\n\`\`\`json\n${JSON.stringify(
                 update.data.inputs,
                 null,
@@ -128,6 +128,10 @@ function ChatPanel({
               update.data.outputs &&
               update.data.outputs.result
             ) {
+              console.log(
+                `[DEBUG] ChatPanel: Agent complete outputs:`,
+                update.data.outputs.result
+              );
               content += `\n\`\`\`json\n${JSON.stringify(
                 update.data.outputs.result,
                 null,
@@ -143,6 +147,10 @@ function ChatPanel({
             update.data.results
           ) {
             content += `\nWorkflow execution completed with results:`;
+            console.log(
+              `[DEBUG] ChatPanel: Workflow complete results:`,
+              update.data.results
+            );
             content += `\n\`\`\`json\n${JSON.stringify(
               update.data.results,
               null,
@@ -156,6 +164,13 @@ function ChatPanel({
         });
 
         setMessages((prev) => [...prev, ...messagesToAdd]);
+
+        // Ensure scroll to bottom after adding messages
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+          }
+        }, 100);
       }
     }
   }, [executionUpdates]);
@@ -190,7 +205,7 @@ function ChatPanel({
   }, [executionStatus]);
 
   return (
-    <div className="flex h-full flex-col border rounded-lg bg-background">
+    <div className="flex flex-col border rounded-lg bg-background h-[calc(100vh-12rem)]">
       <div className="flex items-center justify-between border-b p-3">
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
@@ -224,20 +239,62 @@ function ChatPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-full">
         {messages.map((message, index) => (
           <div
             key={index}
             className={`flex justify-start animate-in fade-in-0 slide-in-from-bottom-3 duration-300`}
           >
-            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center mr-2 mt-1">
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center mr-2 mt-1 flex-shrink-0">
               <Settings className="h-4 w-4 text-primary" />
             </div>
 
             <div className="max-w-[90%] rounded-lg px-4 py-2.5 shadow-sm bg-muted rounded-tl-none">
-              <div className="text-sm whitespace-pre-wrap break-words">
+              <div className="text-sm whitespace-pre-wrap break-words overflow-x-auto">
                 {typeof message.content === "object"
                   ? JSON.stringify(message.content, null, 2)
+                  : message.content.includes("```json")
+                  ? message.content.split("```json").map((part, i) => {
+                      if (i % 2 === 0) {
+                        return <span key={i}>{part}</span>;
+                      } else {
+                        try {
+                          const jsonContent = part.split("```")[0];
+                          return (
+                            <pre
+                              key={i}
+                              className="bg-black/10 p-2 rounded my-2 overflow-x-auto"
+                            >
+                              <code>{jsonContent}</code>
+                            </pre>
+                          );
+                        } catch (e) {
+                          return (
+                            <pre
+                              key={i}
+                              className="bg-black/10 p-2 rounded my-2 overflow-x-auto"
+                            >
+                              {part}
+                            </pre>
+                          );
+                        }
+                      }
+                    })
+                  : message.content.includes("```")
+                  ? message.content.split("```").map((part, i) => {
+                      if (i % 2 === 0) {
+                        return <span key={i}>{part}</span>;
+                      } else {
+                        return (
+                          <pre
+                            key={i}
+                            className="bg-black/10 p-2 rounded my-2 overflow-x-auto"
+                          >
+                            <code>{part}</code>
+                          </pre>
+                        );
+                      }
+                    })
                   : message.content}
               </div>
               <div className="text-xs mt-1 opacity-70 text-right text-muted-foreground">
@@ -549,6 +606,9 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
     "idle" | "executing" | "finished" | "failed"
   >("idle");
 
+  // Add a ref to track if execution is complete
+  const executionCompleteRef = useRef<boolean>(false);
+
   // Check if screen is mobile
   useEffect(() => {
     const checkIfMobile = () => {
@@ -685,9 +745,22 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
 
   const startWorkflowExecution = async (inputs: Record<string, string>) => {
     try {
+      console.log("[DEBUG] Starting workflow execution with inputs:", inputs);
       setIsExecuting(true);
       setExecutionStatus("executing");
       setExecutionUpdates([]);
+      // Reset the execution complete flag
+      executionCompleteRef.current = false;
+
+      // Clean up any existing inputs to ensure proper format
+      const formattedInputs: Record<string, string> = {};
+      Object.entries(inputs).forEach(([key, value]) => {
+        // Remove any type annotations from the key
+        const cleanKey = key.split(":")[0].trim();
+        formattedInputs[cleanKey] = value;
+      });
+
+      console.log("[DEBUG] Formatted inputs:", formattedInputs);
 
       // Start the workflow execution
       const response = await fetch(`/api/workflows/${params.id}/execute`, {
@@ -695,14 +768,24 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(inputs),
+        body: JSON.stringify(formattedInputs),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to start workflow execution");
+        const errorData = await response.json();
+        console.error("[DEBUG] Failed to start workflow execution:", errorData);
+        throw new Error(
+          `Failed to start workflow execution: ${
+            errorData.error || response.statusText
+          }`
+        );
       }
 
       const data = await response.json();
+      console.log(
+        "[DEBUG] Workflow execution started with ID:",
+        data.executionId
+      );
       setExecutionId(data.executionId);
 
       // Start polling for updates
@@ -716,39 +799,55 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
 
       toast.success("Workflow execution started");
     } catch (error) {
-      console.error("Error starting workflow execution:", error);
+      console.error("[DEBUG] Error starting workflow execution:", error);
       toast.error("Failed to start workflow execution");
       setIsExecuting(false);
       setExecutionStatus("failed");
     }
   };
 
-  // Add a separate useEffect for cleanup
-  useEffect(() => {
-    // Cleanup function to clear interval when component unmounts
-    return () => {
+  const fetchExecutionUpdates = async (execId: string) => {
+    // Skip if we already know execution is complete
+    if (executionCompleteRef.current) {
+      console.log("[DEBUG] Skipping update fetch - execution already complete");
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
-    };
-  }, []);
+      return;
+    }
 
-  const fetchExecutionUpdates = async (execId: string) => {
     try {
+      console.log(`[DEBUG] Fetching execution updates for ID: ${execId}`);
       const response = await fetch(
         `/api/workflows/${params.id}/execute?executionId=${execId}`
       );
 
       if (!response.ok) {
-        throw new Error("Failed to fetch execution updates");
+        const errorData = await response.json();
+        console.error("[DEBUG] Failed to fetch execution updates:", errorData);
+        throw new Error(
+          `Failed to fetch execution updates: ${
+            errorData.error || response.statusText
+          }`
+        );
       }
 
       const data = await response.json();
-      setExecutionUpdates(data.updates);
+      console.log(
+        `[DEBUG] Received ${data.updates.length} execution updates, isComplete: ${data.isComplete}`
+      );
+
+      // Process the updates
+      if (data.updates && data.updates.length > 0) {
+        setExecutionUpdates(data.updates);
+      }
 
       // If execution is complete or has error, stop polling and update status
       if (data.isComplete) {
+        console.log("[DEBUG] Workflow execution is complete, stopping polling");
+        executionCompleteRef.current = true;
+
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
@@ -759,17 +858,19 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
           (update: ExecutionUpdate) => update.type === "error"
         );
         if (hasError) {
+          console.log("[DEBUG] Workflow execution failed");
           setIsExecuting(false);
           setExecutionStatus("failed");
           toast.error("Workflow execution failed");
         } else {
+          console.log("[DEBUG] Workflow execution completed successfully");
           setIsExecuting(false);
           setExecutionStatus("finished");
           toast.success("Workflow execution completed");
         }
       }
     } catch (error) {
-      console.error("Error fetching execution updates:", error);
+      console.error("[DEBUG] Error fetching execution updates:", error);
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
@@ -779,6 +880,18 @@ export default function WorkflowPage({ params }: { params: { id: string } }) {
       toast.error("Error monitoring workflow execution");
     }
   };
+
+  // Add a separate useEffect for cleanup
+  useEffect(() => {
+    // Cleanup function to clear interval when component unmounts
+    return () => {
+      if (pollingIntervalRef.current) {
+        console.log("[DEBUG] Cleaning up polling interval on unmount");
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Add the interrupt handler function
   const handleInterruptWorkflow = () => {
