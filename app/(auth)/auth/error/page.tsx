@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -79,49 +79,51 @@ export default function AuthErrorPage() {
   }, [searchParams]);
 
   return (
-    <Card className="w-full bg-card/80 backdrop-blur-sm border-primary/20">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="h-6 w-6 text-red-500" />
-          <CardTitle>Authentication Error</CardTitle>
-        </div>
-        <CardDescription>
-          There was a problem with your authentication request
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {error ? (
-          <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
-            <h3 className="font-semibold text-red-700 dark:text-red-400">
-              Error: {error}
-            </h3>
-            <p className="mt-1 text-red-600 dark:text-red-300">
-              {errorDescription}
-            </p>
+    <Suspense fallback={<div>Loading...</div>}>
+      <Card className="w-full bg-card/80 backdrop-blur-sm border-primary/20">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-6 w-6 text-red-500" />
+            <CardTitle>Authentication Error</CardTitle>
           </div>
-        ) : (
-          <p>No error details were provided.</p>
-        )}
+          <CardDescription>
+            There was a problem with your authentication request
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error ? (
+            <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-md border border-red-200 dark:border-red-900">
+              <h3 className="font-semibold text-red-700 dark:text-red-400">
+                Error: {error}
+              </h3>
+              <p className="mt-1 text-red-600 dark:text-red-300">
+                {errorDescription}
+              </p>
+            </div>
+          ) : (
+            <p>No error details were provided.</p>
+          )}
 
-        <div className="space-y-2">
-          <h3 className="font-semibold">What can you do?</h3>
-          <ul className="list-disc pl-5 space-y-1">
-            <li>Try signing in again</li>
-            <li>Check if you're using the correct credentials</li>
-            <li>If you're using a social login, try a different provider</li>
-            <li>Clear your browser cookies and try again</li>
-            <li>If the problem persists, contact support</li>
-          </ul>
-        </div>
-      </CardContent>
-      <CardFooter className="flex gap-2 justify-center">
-        <Button asChild variant="default">
-          <Link href="/auth/login">Try Again</Link>
-        </Button>
-        <Button asChild variant="outline">
-          <Link href="/auth/debug">Debug Info</Link>
-        </Button>
-      </CardFooter>
-    </Card>
+          <div className="space-y-2">
+            <h3 className="font-semibold">What can you do?</h3>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Try signing in again</li>
+              <li>Check if you're using the correct credentials</li>
+              <li>If you're using a social login, try a different provider</li>
+              <li>Clear your browser cookies and try again</li>
+              <li>If the problem persists, contact support</li>
+            </ul>
+          </div>
+        </CardContent>
+        <CardFooter className="flex gap-2 justify-center">
+          <Button asChild variant="default">
+            <Link href="/auth/login">Try Again</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/auth/debug">Debug Info</Link>
+          </Button>
+        </CardFooter>
+      </Card>
+    </Suspense>
   );
 }
