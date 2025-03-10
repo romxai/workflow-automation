@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/route";
-import {
-  debugAgent,
-  executeAgent,
-  generateAgentPrompt,
-} from "@/lib/services/builder";
+import { executeAgent } from "@/lib/services/builder";
 import { Agent } from "@/lib/models/workflow";
 
 // POST /api/builder/debug - Debug an agent
@@ -38,8 +34,8 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case "debug":
         // Debug the agent (generate a better prompt and test it)
-        const debugResult = await debugAgent(agent, inputs || {});
-        return NextResponse.json(debugResult);
+        //const debugResult = await debugAgent(agent, inputs || {});
+        //return NextResponse.json(debugResult);
 
       case "execute":
         // Execute the agent with the provided inputs
@@ -52,17 +48,17 @@ export async function POST(request: NextRequest) {
         const executeResult = await executeAgent(agent, inputs);
         return NextResponse.json({ result: executeResult, success: true });
 
-      case "generate-prompt":
-        // Generate a better prompt for the agent
-        const improvedPrompt = await generateAgentPrompt(agent);
-        return NextResponse.json({
-          improvedPrompt,
-          success: true,
-          agent: {
-            ...agent,
-            prompt: improvedPrompt,
-          },
-        });
+      // case "generate-prompt":
+      // Generate a better prompt for the agent
+      //const improvedPrompt = await generateAgentPrompt(agent);
+      //return NextResponse.json({
+      //  improvedPrompt,
+      //  success: true,
+      //  agent: {
+      //    ...agent,
+      //    prompt: improvedPrompt,
+      //  },
+      //});
 
       default:
         return NextResponse.json(

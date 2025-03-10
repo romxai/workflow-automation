@@ -7,6 +7,7 @@ import { MongoDBAdapter } from "@auth/mongodb-adapter";
 import clientPromise from "@/lib/mongodb";
 import bcrypt from "bcryptjs";
 import { MongoClient, ObjectId } from "mongodb";
+import { Suspense } from "react";
 
 // Debug helper
 const debug = (message: string, data?: any) => {
@@ -134,9 +135,9 @@ export const authOptions: NextAuthOptions = {
     async signOut(message) {
       debug("Sign out event", { user: message.token.email });
     },
-    async error(message) {
-      debug("Error event", { error: message.error });
-    },
+    //async error(message) {
+    //  debug("Error event", { error: message.error });
+    //},
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
