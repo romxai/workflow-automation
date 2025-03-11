@@ -70,13 +70,22 @@ export class Orchestrator {
       console.log(`[DEBUG] Workflow name: ${this.workflow.name}`);
       console.log(`[DEBUG] Initial input data:`, inputData);
 
+      // Helper function to normalize keys by removing type annotations
+      const normalizeKey = (key: string): string => key.split(":")[0].trim();
+
       // Normalize input data by removing type annotations from keys
       const normalizedInputData: Record<string, any> = {};
       Object.entries(inputData).forEach(([key, value]) => {
-        const normalizedKey = key.split(":")[0].trim();
-        normalizedInputData[normalizedKey] = value;
-        // Also keep the original key for backward compatibility
-        normalizedInputData[key] = value;
+        const normalizedKey = normalizeKey(key);
+        normalizedInputData[key] = value; // Keep original key
+
+        // Only add normalized key if it's different from the original
+        if (normalizedKey !== key) {
+          normalizedInputData[normalizedKey] = value;
+          console.log(
+            `[DEBUG] Added normalized input key: ${normalizedKey} (original: ${key})`
+          );
+        }
       });
 
       this.executionUpdates = []; // Reset updates
@@ -163,21 +172,33 @@ export class Orchestrator {
 
         // Update results with this agent's output
         if (output.result) {
+          // Helper function to normalize keys by removing type annotations
+          const normalizeKey = (key: string): string =>
+            key.split(":")[0].trim();
+
           // Add each output to the global results and inputs
           Object.entries(output.result).forEach(([key, value]) => {
             // Normalize the output key
-            const normalizedKey = key.split(":")[0].trim();
+            const normalizedKey = normalizeKey(key);
 
             // Store with both the original and normalized keys
             results[key] = value;
-            results[normalizedKey] = value;
+
+            // Only add the normalized key if it's different from the original
+            if (normalizedKey !== key) {
+              results[normalizedKey] = value;
+            }
 
             // Also add to global inputs with both keys
             globalInputs[key] = value;
-            globalInputs[normalizedKey] = value;
+
+            // Only add the normalized key if it's different from the original
+            if (normalizedKey !== key) {
+              globalInputs[normalizedKey] = value;
+            }
 
             console.log(
-              `[DEBUG] Adding output '${key}' from ${agent.name} to global results and inputs`
+              `[DEBUG] Adding output '${key}' (normalized: '${normalizedKey}') from ${agent.name} to global results and inputs`
             );
           });
         }
@@ -358,20 +379,23 @@ export class Orchestrator {
           if (sourceOutput && sourceOutput.result) {
             // Try to find the output value using different key formats
             let outputValue;
+            let outputKey;
 
             // First try the exact output name
             if (sourceOutput.result[matchingOutput] !== undefined) {
               outputValue = sourceOutput.result[matchingOutput];
+              outputKey = matchingOutput;
             }
             // Then try the normalized output name
             else if (
               sourceOutput.result[normalizeKey(matchingOutput)] !== undefined
             ) {
               outputValue = sourceOutput.result[normalizeKey(matchingOutput)];
+              outputKey = normalizeKey(matchingOutput);
             }
             // Finally, try all keys with normalized comparison
             else {
-              const outputKey = Object.keys(sourceOutput.result).find(
+              outputKey = Object.keys(sourceOutput.result).find(
                 (key) => normalizeKey(key) === normalizeKey(matchingOutput)
               );
               if (outputKey) {
@@ -382,7 +406,7 @@ export class Orchestrator {
             if (outputValue !== undefined) {
               inputs[inputName] = outputValue;
               console.log(
-                `[DEBUG] Input '${inputName}' for ${agent.name} found from agent ${sourceAgent.name}`
+                `[DEBUG] Input '${inputName}' for ${agent.name} found from agent ${sourceAgent.name} (output field: '${outputKey}')`
               );
               console.log(
                 `[DEBUG] Value: ${
@@ -402,18 +426,21 @@ export class Orchestrator {
       if (!inputFound) {
         // Try different key formats in global inputs
         let globalValue;
+        let globalKey;
 
         // First try the exact input name
         if (globalInputs[inputName] !== undefined) {
           globalValue = globalInputs[inputName];
+          globalKey = inputName;
         }
         // Then try the normalized input name
         else if (globalInputs[normalizedInputName] !== undefined) {
           globalValue = globalInputs[normalizedInputName];
+          globalKey = normalizedInputName;
         }
         // Finally, try all keys with normalized comparison
         else {
-          const globalKey = Object.keys(globalInputs).find(
+          globalKey = Object.keys(globalInputs).find(
             (key) => normalizeKey(key) === normalizedInputName
           );
           if (globalKey) {
@@ -424,7 +451,7 @@ export class Orchestrator {
         if (globalValue !== undefined) {
           inputs[inputName] = globalValue;
           console.log(
-            `[DEBUG] Input '${inputName}' for ${agent.name} found from global inputs`
+            `[DEBUG] Input '${inputName}' for ${agent.name} found from global inputs (key: '${globalKey}')`
           );
           console.log(
             `[DEBUG] Value: ${

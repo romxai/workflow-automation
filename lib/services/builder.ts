@@ -112,19 +112,27 @@ export async function executeAgent(
     });
 
     // Add instructions for JSON output with expected output structure
+    // Normalize output field names by removing type annotations
+    const normalizedOutputs = agent.outputs.map((output) => {
+      const normalizedOutput = output.split(":")[0].trim();
+      return normalizedOutput;
+    });
+
     const finalPrompt = `
 ${agentPrompt}
 
 IMPORTANT: Your response must be in valid JSON format with the following structure:
 {
   "result": {
-    ${agent.outputs.map((output) => `"${output}": "value"`).join(",\n    ")}
+    ${normalizedOutputs.map((output) => `"${output}": "value"`).join(",\n    ")}
   },
   "reasoning": "Explanation of how you arrived at this result"
 }
 
-Make sure to include all the required output fields: ${agent.outputs.join(", ")}
-Do not include any fields in the result that are not in this list: ${agent.outputs.join(
+Make sure to include all the required output fields: ${normalizedOutputs.join(
+      ", "
+    )}
+Do not include any fields in the result that are not in this list: ${normalizedOutputs.join(
       ", "
     )}
 `;
@@ -213,10 +221,38 @@ Do not include any fields in the result that are not in this list: ${agent.outpu
       parsedOutput.result = {};
     }
 
-    // Ensure all expected outputs are present
-    const missingOutputs = agent.outputs.filter(
-      (output) => !(output in parsedOutput.result)
-    );
+    // Helper function to normalize keys by removing type annotations
+    const normalizeKey = (key: string): string => key.split(":")[0].trim();
+
+    // Create mappings between normalized and original output fields
+    const normalizedToOriginal = new Map<string, string>();
+    const originalToNormalized = new Map<string, string>();
+
+    agent.outputs.forEach((output) => {
+      const normalized = normalizeKey(output);
+      normalizedToOriginal.set(normalized, output);
+      originalToNormalized.set(output, normalized);
+    });
+
+    // Get normalized versions of the expected outputs
+    const normalizedExpectedOutputs = agent.outputs.map(normalizeKey);
+
+    // Check for missing outputs by comparing normalized keys
+    const missingOutputs: string[] = [];
+
+    normalizedExpectedOutputs.forEach((normalizedOutput) => {
+      // Check if any key in the result matches this normalized output
+      const hasOutput = Object.keys(parsedOutput.result).some(
+        (resultKey) => normalizeKey(resultKey) === normalizedOutput
+      );
+
+      if (!hasOutput) {
+        // Use the original output field name with type annotation for the error message
+        const originalOutput =
+          normalizedToOriginal.get(normalizedOutput) || normalizedOutput;
+        missingOutputs.push(originalOutput);
+      }
+    });
 
     if (missingOutputs.length > 0) {
       console.warn(
@@ -227,14 +263,37 @@ Do not include any fields in the result that are not in this list: ${agent.outpu
 
       // Add missing outputs with placeholder values
       missingOutputs.forEach((output) => {
+        // Use the normalized key for the result
+        const normalizedOutput =
+          originalToNormalized.get(output) || normalizeKey(output);
         parsedOutput.result[output] = `Missing output: ${output}`;
       });
     }
 
-    // Remove any extra fields that are not in the expected outputs
-    const extraOutputs = Object.keys(parsedOutput.result).filter(
-      (key) => !agent.outputs.includes(key)
-    );
+    // Transform the result to use the original output field names with type annotations
+    const transformedResult: Record<string, any> = {};
+
+    Object.entries(parsedOutput.result).forEach(([key, value]) => {
+      const normalizedKey = normalizeKey(key);
+
+      // If this is a known output field, use the original name with type annotation
+      if (normalizedToOriginal.has(normalizedKey)) {
+        const originalKey = normalizedToOriginal.get(normalizedKey)!;
+        transformedResult[originalKey] = value;
+      } else {
+        // Otherwise keep the original key
+        transformedResult[key] = value;
+      }
+    });
+
+    // Replace the result with the transformed version
+    parsedOutput.result = transformedResult;
+
+    // Check for unexpected fields (after normalization)
+    const extraOutputs = Object.keys(parsedOutput.result).filter((key) => {
+      const normalizedKey = normalizeKey(key);
+      return !normalizedExpectedOutputs.includes(normalizedKey);
+    });
 
     if (extraOutputs.length > 0) {
       console.warn(
